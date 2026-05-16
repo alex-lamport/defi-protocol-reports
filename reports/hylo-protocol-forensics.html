@@ -1,0 +1,1188 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hylo Protocol — λ Forensics Deep Dive</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;0,9..144,900;1,9..144,400&family=JetBrains+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --bg-card: #111111;
+    --bg-card-2: #161616;
+    --ink: #f5f3ed;
+    --ink-dim: #a8a59c;
+    --ink-faint: #5a584f;
+    --line: #1f1d18;
+    --line-strong: #2a2722;
+    --amber: #d4a24a;
+    --amber-glow: rgba(212, 162, 74, 0.15);
+    --green: #7fb069;
+    --red: #c85450;
+    --blue: #6b8eaf;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'Fraunces', Georgia, serif;
+    font-weight: 400;
+    line-height: 1.55;
+    font-feature-settings: "ss01", "ss02";
+    overflow-x: hidden;
+    background-image:
+      radial-gradient(ellipse at 20% 10%, rgba(212, 162, 74, 0.04) 0%, transparent 50%),
+      radial-gradient(ellipse at 80% 90%, rgba(107, 142, 175, 0.03) 0%, transparent 50%);
+  }
+
+  /* Grain overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.025;
+    z-index: 100;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' /%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  .container {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 60px 40px;
+  }
+
+  /* Lang toggle */
+  .lang-toggle {
+    position: fixed;
+    top: 24px;
+    right: 24px;
+    z-index: 50;
+    display: flex;
+    gap: 0;
+    background: var(--bg-card);
+    border: 1px solid var(--line-strong);
+    border-radius: 2px;
+    overflow: hidden;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+  }
+  .lang-toggle button {
+    background: transparent;
+    color: var(--ink-faint);
+    border: none;
+    padding: 8px 14px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: inherit;
+    letter-spacing: inherit;
+    transition: all 0.2s;
+  }
+  .lang-toggle button.active {
+    background: var(--amber);
+    color: var(--bg);
+  }
+  .lang-toggle button:hover:not(.active) {
+    color: var(--ink);
+  }
+
+  /* Header */
+  .header {
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 40px;
+    margin-bottom: 60px;
+    position: relative;
+  }
+  .header-meta {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.15em;
+    color: var(--amber);
+    text-transform: uppercase;
+    margin-bottom: 24px;
+  }
+  .header-meta::before {
+    content: 'λ';
+    font-family: 'Fraunces', serif;
+    font-size: 22px;
+    font-weight: 300;
+    color: var(--amber);
+  }
+  .dot {
+    width: 4px; height: 4px;
+    border-radius: 50%;
+    background: var(--amber);
+  }
+  h1 {
+    font-family: 'Fraunces', serif;
+    font-weight: 300;
+    font-size: clamp(48px, 7vw, 88px);
+    line-height: 0.95;
+    letter-spacing: -0.03em;
+    margin-bottom: 24px;
+  }
+  h1 em {
+    font-style: italic;
+    font-weight: 400;
+    color: var(--amber);
+  }
+  .subtitle {
+    font-size: 20px;
+    color: var(--ink-dim);
+    max-width: 680px;
+    line-height: 1.5;
+    font-weight: 300;
+  }
+  .header-tag {
+    position: absolute;
+    top: 0;
+    right: 0;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--ink-faint);
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+  }
+
+  /* Section */
+  section {
+    margin-bottom: 80px;
+  }
+  .section-num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--amber);
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .section-num::after {
+    content: '';
+    height: 1px;
+    flex: 1;
+    background: var(--line-strong);
+  }
+  h2 {
+    font-family: 'Fraunces', serif;
+    font-weight: 400;
+    font-size: clamp(32px, 4vw, 44px);
+    line-height: 1.05;
+    letter-spacing: -0.02em;
+    margin-bottom: 32px;
+    max-width: 820px;
+  }
+  h2 em {
+    font-style: italic;
+    color: var(--amber);
+  }
+  p {
+    font-size: 17px;
+    line-height: 1.65;
+    margin-bottom: 18px;
+    color: var(--ink);
+    max-width: 740px;
+  }
+  p.lead {
+    font-size: 19px;
+    color: var(--ink);
+    line-height: 1.6;
+  }
+  strong {
+    font-weight: 600;
+    color: var(--ink);
+  }
+  em.highlight {
+    font-style: italic;
+    color: var(--amber);
+  }
+
+  /* TLDR Card */
+  .tldr {
+    background: linear-gradient(135deg, var(--bg-card) 0%, var(--bg-card-2) 100%);
+    border: 1px solid var(--line-strong);
+    border-left: 3px solid var(--amber);
+    padding: 32px 36px;
+    margin-bottom: 60px;
+    position: relative;
+  }
+  .tldr-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--amber);
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+    margin-bottom: 16px;
+  }
+  .tldr p {
+    font-size: 18px;
+    margin-bottom: 12px;
+    max-width: none;
+  }
+  .tldr p:last-child { margin-bottom: 0; }
+
+  /* Stats grid */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 1px;
+    background: var(--line-strong);
+    border: 1px solid var(--line-strong);
+    margin-bottom: 48px;
+  }
+  .stat {
+    background: var(--bg-card);
+    padding: 28px 24px;
+    position: relative;
+  }
+  .stat-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--ink-faint);
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+  .stat-value {
+    font-family: 'Fraunces', serif;
+    font-size: 32px;
+    font-weight: 400;
+    line-height: 1;
+    letter-spacing: -0.02em;
+    color: var(--ink);
+    margin-bottom: 4px;
+  }
+  .stat-value.amber { color: var(--amber); }
+  .stat-value.green { color: var(--green); }
+  .stat-value.red { color: var(--red); }
+  .stat-sub {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--ink-dim);
+  }
+
+  /* Mechanism diagram */
+  .mechanism {
+    background: var(--bg-card);
+    border: 1px solid var(--line-strong);
+    padding: 40px;
+    margin-bottom: 32px;
+    position: relative;
+  }
+  .mechanism-title {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--amber);
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    margin-bottom: 24px;
+  }
+  .flow {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr auto 1fr;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  .flow-box {
+    background: var(--bg-card-2);
+    border: 1px solid var(--line-strong);
+    padding: 20px 18px;
+    text-align: center;
+    border-radius: 2px;
+  }
+  .flow-box .name {
+    font-family: 'Fraunces', serif;
+    font-size: 22px;
+    font-weight: 500;
+    color: var(--amber);
+    letter-spacing: -0.01em;
+    margin-bottom: 6px;
+  }
+  .flow-box .desc {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--ink-dim);
+    line-height: 1.4;
+  }
+  .arrow {
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--ink-faint);
+    font-size: 20px;
+  }
+  @media (max-width: 720px) {
+    .flow {
+      grid-template-columns: 1fr;
+    }
+    .arrow {
+      transform: rotate(90deg);
+      text-align: center;
+    }
+  }
+
+  /* Token cards */
+  .tokens {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 16px;
+    margin-bottom: 32px;
+  }
+  .token-card {
+    background: var(--bg-card);
+    border: 1px solid var(--line-strong);
+    padding: 28px;
+    position: relative;
+    transition: border-color 0.3s;
+  }
+  .token-card:hover {
+    border-color: var(--amber);
+  }
+  .token-card .symbol {
+    font-family: 'Fraunces', serif;
+    font-size: 26px;
+    font-weight: 500;
+    color: var(--amber);
+    margin-bottom: 8px;
+    letter-spacing: -0.01em;
+  }
+  .token-card .role {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--ink-faint);
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    margin-bottom: 16px;
+  }
+  .token-card p {
+    font-size: 15px;
+    line-height: 1.55;
+    color: var(--ink-dim);
+    margin: 0;
+  }
+  .token-card .apy {
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid var(--line);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--green);
+    letter-spacing: 0.05em;
+  }
+
+  /* Pull quote */
+  .pull-quote {
+    border-left: 2px solid var(--amber);
+    padding-left: 28px;
+    margin: 40px 0;
+    max-width: 820px;
+  }
+  .pull-quote p {
+    font-family: 'Fraunces', serif;
+    font-style: italic;
+    font-size: 26px;
+    line-height: 1.4;
+    font-weight: 300;
+    color: var(--ink);
+    margin: 0;
+  }
+
+  /* Risk grid */
+  .risks {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1px;
+    background: var(--line-strong);
+    border: 1px solid var(--line-strong);
+  }
+  .risk {
+    background: var(--bg-card);
+    padding: 28px;
+    position: relative;
+  }
+  .risk-num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--red);
+    letter-spacing: 0.15em;
+    margin-bottom: 12px;
+  }
+  .risk h4 {
+    font-family: 'Fraunces', serif;
+    font-size: 19px;
+    font-weight: 500;
+    margin-bottom: 10px;
+    color: var(--ink);
+  }
+  .risk p {
+    font-size: 14px;
+    line-height: 1.55;
+    color: var(--ink-dim);
+    margin: 0;
+  }
+
+  /* Verdict */
+  .verdict {
+    background: linear-gradient(135deg, var(--bg-card) 0%, #0e0e0e 100%);
+    border: 1px solid var(--line-strong);
+    padding: 48px;
+    margin-bottom: 32px;
+    position: relative;
+    overflow: hidden;
+  }
+  .verdict::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--amber), transparent);
+  }
+  .verdict-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--amber);
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+    margin-bottom: 20px;
+  }
+  .verdict h3 {
+    font-family: 'Fraunces', serif;
+    font-size: 32px;
+    font-weight: 400;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+    margin-bottom: 24px;
+    max-width: 720px;
+  }
+  .verdict h3 em {
+    font-style: italic;
+    color: var(--amber);
+  }
+  .verdict p {
+    font-size: 17px;
+    color: var(--ink-dim);
+    max-width: 720px;
+  }
+
+  /* Comparison table */
+  .compare {
+    background: var(--bg-card);
+    border: 1px solid var(--line-strong);
+    margin-bottom: 32px;
+    overflow-x: auto;
+  }
+  .compare table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .compare th, .compare td {
+    padding: 18px 20px;
+    text-align: left;
+    border-bottom: 1px solid var(--line);
+    font-size: 13px;
+  }
+  .compare th {
+    font-size: 10px;
+    color: var(--amber);
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    background: var(--bg-card-2);
+    font-weight: 500;
+  }
+  .compare td:first-child {
+    font-family: 'Fraunces', serif;
+    font-size: 16px;
+    color: var(--ink);
+    font-weight: 500;
+  }
+  .compare tr:last-child td {
+    border-bottom: none;
+  }
+
+  /* Inline metrics */
+  .metric-inline {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.92em;
+    color: var(--amber);
+    background: rgba(212, 162, 74, 0.08);
+    padding: 2px 6px;
+    border-radius: 2px;
+    letter-spacing: 0.02em;
+  }
+
+  /* Stress test box */
+  .stress-test {
+    background: var(--bg-card);
+    border: 1px solid var(--line-strong);
+    border-top: 3px solid var(--red);
+    padding: 32px;
+    margin-bottom: 32px;
+  }
+  .stress-test .label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--red);
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+    margin-bottom: 14px;
+  }
+  .stress-test h4 {
+    font-family: 'Fraunces', serif;
+    font-size: 22px;
+    font-weight: 500;
+    margin-bottom: 16px;
+    color: var(--ink);
+  }
+  .stress-test p {
+    font-size: 15px;
+    color: var(--ink-dim);
+    line-height: 1.6;
+    margin-bottom: 12px;
+    max-width: none;
+  }
+  .stress-test p:last-child { margin-bottom: 0; }
+  .stress-test strong {
+    color: var(--ink);
+  }
+
+  /* Footer */
+  footer {
+    margin-top: 100px;
+    padding-top: 40px;
+    border-top: 1px solid var(--line);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 16px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--ink-faint);
+    letter-spacing: 0.1em;
+  }
+  footer a {
+    color: var(--amber);
+    text-decoration: none;
+  }
+  footer a:hover {
+    text-decoration: underline;
+  }
+
+  .lang-section { display: none; }
+  .lang-section.active { display: block; }
+
+  /* Tone tag */
+  .tone-tag {
+    display: inline-block;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--amber);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    border: 1px solid var(--amber);
+    padding: 3px 8px;
+    border-radius: 2px;
+    margin-right: 8px;
+  }
+
+  @media (max-width: 720px) {
+    .container { padding: 40px 24px; }
+    .verdict { padding: 32px 24px; }
+    .mechanism { padding: 28px 20px; }
+    .header-tag { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<div class="lang-toggle">
+  <button id="btn-it" class="active" onclick="setLang('it')">IT</button>
+  <button id="btn-en" onclick="setLang('en')">EN</button>
+</div>
+
+<div class="container">
+
+<!-- ========== ITALIAN ========== -->
+<div id="lang-it" class="lang-section active">
+
+  <header class="header">
+    <div class="header-meta">
+      <span>λ Forensics</span>
+      <span class="dot"></span>
+      <span>Deep Dive · 008</span>
+      <span class="dot"></span>
+      <span>Solana DeFi</span>
+    </div>
+    <div class="header-tag">CR / 182% / OPERATIONAL</div>
+    <h1>Hylo:<br>la leva <em>senza liquidazione</em><br>è davvero possibile?</h1>
+    <p class="subtitle">Un protocollo Solana che promette esposizione 2–4x su SOL senza margin call, senza funding rate, senza oracoli. Vediamo se i numeri reggono o se è la solita slide da Crypto Twitter.</p>
+  </header>
+
+  <div class="tldr">
+    <div class="tldr-label">→ TL;DR</div>
+    <p>Hylo è un dual-token system su Solana: <strong>hyUSD</strong> (stablecoin) e <strong>xSOL</strong> (leva) condividono lo stesso pool di collaterale in LST.</p>
+    <p>Quando SOL si muove, xSOL assorbe la volatilità. hyUSD resta stabile. Niente liquidazioni perché <em class="highlight">non c'è debito</em> — è una ridistribuzione interna del valore.</p>
+    <p>$100M TVL in 4 mesi dal lancio. Audit OtterSec. Stress test reale Q1 2026 superato. <strong>Funziona.</strong> Ma ha i suoi rischi, e te li racconto tutti.</p>
+  </div>
+
+  <section>
+    <div class="section-num">01 — I numeri</div>
+    <h2>Cosa dicono i dati, prima della narrativa</h2>
+
+    <div class="stats">
+      <div class="stat">
+        <div class="stat-label">TVL Peak</div>
+        <div class="stat-value amber">~$100M</div>
+        <div class="stat-sub">in 4 mesi dal launch</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">sHYUSD APY</div>
+        <div class="stat-value green">15–22%</div>
+        <div class="stat-sub">range operativo 2025-26</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Q1 2026 Peak APY</div>
+        <div class="stat-value green">52,4%</div>
+        <div class="stat-sub">stress test trimestrale</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Collateral Ratio</div>
+        <div class="stat-value">182%</div>
+        <div class="stat-sub">target minimo: 150%</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">xSOL Leverage</div>
+        <div class="stat-value amber">2–3,2x</div>
+        <div class="stat-sub">variabile, mai oltre 4x</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Annualized Fees</div>
+        <div class="stat-value">$6M+</div>
+        <div class="stat-sub">revenue protocollo</div>
+      </div>
+    </div>
+
+    <p>Il TVL è cresciuto da zero a $100M in 4 mesi. Il fatturato annualizzato in fee è oltre $6M. Sono numeri da product-market fit reale, non da farm di emissioni.</p>
+  </section>
+
+  <section>
+    <div class="section-num">02 — Architettura</div>
+    <h2>Il trucco: <em>nessuno presta a nessuno</em></h2>
+
+    <p class="lead">Qui c'è la differenza con Drift, MarginFi, Kamino. Nei perp normali tu prendi in prestito da un pool, e se il prezzo scende sotto la soglia, ti liquidano per ripagare il debito. Su Hylo non c'è prestito. C'è un sistema chiuso a due token che si auto-bilancia.</p>
+
+    <div class="mechanism">
+      <div class="mechanism-title">→ Flusso del valore</div>
+      <div class="flow">
+        <div class="flow-box">
+          <div class="name">LST</div>
+          <div class="desc">jitoSOL, mSOL,<br>bSOL, JupSOL</div>
+        </div>
+        <div class="arrow">→</div>
+        <div class="flow-box">
+          <div class="name">Pool</div>
+          <div class="desc">collaterale<br>condiviso</div>
+        </div>
+        <div class="arrow">→</div>
+        <div class="flow-box">
+          <div class="name">hyUSD + xSOL</div>
+          <div class="desc">stable +<br>leva</div>
+        </div>
+      </div>
+      <p style="font-size: 14px; color: var(--ink-dim); max-width: none; margin: 0;">Il pool di LST deve sempre valere quanto la somma di hyUSD + xSOL emessi. Quando SOL sale, il valore in eccesso va a xSOL. Quando SOL scende, xSOL perde valore ma hyUSD resta agganciato a $1.</p>
+    </div>
+
+    <div class="tokens">
+      <div class="token-card">
+        <div class="symbol">hyUSD</div>
+        <div class="role">Stablecoin</div>
+        <p>Pegged 1:1 al dollaro, backed da LST in modo over-collateralizzato. Non usa oracoli esterni. Liquidità garantita via mint/redeem.</p>
+        <div class="apy">→ Yield base da staking LST</div>
+      </div>
+      <div class="token-card">
+        <div class="symbol">sHYUSD</div>
+        <div class="role">Yield + Stability Pool</div>
+        <p>hyUSD staked. Cattura tutto lo staking yield del pool. Funge da ultimo backstop del sistema in caso di crash.</p>
+        <div class="apy">→ APY 15–22% (52,4% in Q1 2026)</div>
+      </div>
+      <div class="token-card">
+        <div class="symbol">xSOL</div>
+        <div class="role">Leva senza liquidazione</div>
+        <p>Esposizione amplificata 2–3,2x al prezzo di SOL. Niente margin call. Niente funding rate. Niente volatility decay.</p>
+        <div class="apy">→ Sale di più quando SOL sale</div>
+      </div>
+    </div>
+
+    <div class="pull-quote">
+      <p>"xSOL non è leva basata sul debito. È leva basata sul bilancio del protocollo. Per questo non puoi essere liquidato — non c'è nessuno a cui devi dei soldi."</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-num">03 — Il meccanismo di stabilità</div>
+    <h2>Cosa succede <em>quando le cose vanno male</em></h2>
+
+    <p>La domanda ovvia: e se SOL crolla del 50% in tre giorni? Hylo ha tre soglie automatiche basate sul Collateral Ratio (CR), il rapporto tra valore totale del collaterale e hyUSD emesso.</p>
+
+    <div class="compare">
+      <table>
+        <thead>
+          <tr>
+            <th>CR</th>
+            <th>Stato</th>
+            <th>Azione del protocollo</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>&gt; 150%</td>
+            <td>Healthy</td>
+            <td>Operatività normale, fee minime</td>
+          </tr>
+          <tr>
+            <td>130–150%</td>
+            <td>Stability Mode 1</td>
+            <td>Fee dinamiche per scoraggiare azioni che peggiorano il CR</td>
+          </tr>
+          <tr>
+            <td>&lt; 130%</td>
+            <td>Stability Mode 2</td>
+            <td>Stability pool attivata: sHYUSD viene convertito in xSOL</td>
+          </tr>
+          <tr>
+            <td>&lt; 100%</td>
+            <td>Critical</td>
+            <td>xSOL → 0, hyUSD perde l'hedge sulla volatilità di SOL</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>Il punto chiave: prima che il sistema collassi, c'è un'intera riserva di sHYUSD che fa da backstop. Se SOL crolla brutalmente, gli holder di sHYUSD si trovano una parte del loro deposito convertita in xSOL — accettando il rischio in cambio dello yield amplificato che hanno preso fino a quel momento.</p>
+
+    <div class="stress-test">
+      <div class="label">⚠ Stress test Q1 2026 — successo, ma con costi</div>
+      <h4>Cosa è successo davvero</h4>
+      <p>Q1 2026, SOL in calo. Il TVL di Hylo è sceso del <strong>58%</strong>: 33% per il calo del prezzo del collaterale, 25% ($13M) per net withdrawals.</p>
+      <p>La stability pool è stata <strong>attivata</strong> per la prima volta in produzione. sHYUSD ha temporaneamente perso il pegging stabile (era esposta a xSOL). Risultato finale: <strong>52,4% APY</strong> per il trimestre, perché xSOL è poi rimbalzato.</p>
+      <p>Il meccanismo ha funzionato. Ma chi era in sHYUSD per uno yield "stabile" si è ritrovato in una posizione mista per qualche settimana. <em class="highlight">Lezione: sHYUSD non è uno stablecoin tradizionale. È yield + insurance.</em></p>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-num">04 — Cosa lo distingue</div>
+    <h2>Perché non è un altro Terra/Luna</h2>
+
+    <p>Lo so cosa stai pensando. Algorithmic stablecoin, dual-token, "magic". Hai visto il film. Ma Hylo ha tre scelte architetturali che lo separano nettamente da quel disastro:</p>
+
+    <div class="risks" style="border-color: var(--line-strong);">
+      <div class="risk">
+        <div class="risk-num" style="color: var(--green);">+ 01</div>
+        <h4>Backed da asset reali on-chain</h4>
+        <p>UST/Luna era backed da Luna stesso (riflessivo). Hylo è backed da LST che a loro volta sono backed da SOL staked. Asset on-chain auditabile in tempo reale.</p>
+      </div>
+      <div class="risk">
+        <div class="risk-num" style="color: var(--green);">+ 02</div>
+        <h4>Niente oracoli esterni</h4>
+        <p>Il valore di xSOL è calcolato dal collaterale on-chain del protocollo, non da un price feed esterno manipolabile. <span class="metric-inline">attack surface ridotta</span></p>
+      </div>
+      <div class="risk">
+        <div class="risk-num" style="color: var(--green);">+ 03</div>
+        <h4>Over-collateralizzato</h4>
+        <p>Target CR 150%, attuale ~182%. UST aveva CR effettivo molto più basso. Qui c'è un buffer reale prima che il sistema entri in stress.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-num">05 — I rischi (quelli veri)</div>
+    <h2>Niente è gratis, soprattutto in DeFi</h2>
+
+    <p>Non sono qui a venderti il protocollo. Questi sono i rischi concreti, in ordine di gravità:</p>
+
+    <div class="risks">
+      <div class="risk">
+        <div class="risk-num">RISK 01</div>
+        <h4>LST depeg risk</h4>
+        <p>Hylo dipende interamente da jitoSOL, mSOL, bSOL. Se uno di questi collassa, il collaterale di Hylo collassa. La diversificazione tra LST aiuta ma non elimina il rischio sistemico.</p>
+      </div>
+      <div class="risk">
+        <div class="risk-num">RISK 02</div>
+        <h4>Black swan untested</h4>
+        <p>Q1 2026 è stato uno stress test moderato. Un crash di SOL del 70% in 24h non è ancora stato testato. Il sistema dovrebbe reggere matematicamente, ma "dovrebbe" è il problema.</p>
+      </div>
+      <div class="risk">
+        <div class="risk-num">RISK 03</div>
+        <h4>Smart contract risk</h4>
+        <p>Audit OtterSec maggio 2025: 7 finding, tutti risolti (commit verificati). Ma codice complesso = bug ignoti possibili. Niente codice è bulletproof.</p>
+      </div>
+      <div class="risk">
+        <div class="risk-num">RISK 04</div>
+        <h4>sHYUSD non è "stabile"</h4>
+        <p>Durante stress, sHYUSD si converte parzialmente in xSOL. Q1 2026 lo ha mostrato in produzione. Se cerchi un parking stabile, USDC è meglio. sHYUSD è yield + assicurazione.</p>
+      </div>
+      <div class="risk">
+        <div class="risk-num">RISK 05</div>
+        <h4>Leverage decay implicito</h4>
+        <p>Il leverage di xSOL è <em>variabile</em>, non fisso. Se molta gente minta hyUSD, il leverage di xSOL aumenta. Se brucia hyUSD, scende. Difficile da prevedere senza monitorare il CR.</p>
+      </div>
+      <div class="risk">
+        <div class="risk-num">RISK 06</div>
+        <h4>Concentration su SOL</h4>
+        <p>Tutto il sistema dipende dal prezzo di SOL. xBTC arriverà in Q2 2026 per diversificare, ma per ora se Solana ha problemi, Hylo ha problemi.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-num">06 — Il gioco completo</div>
+    <h2>Come integrare Hylo in <em>una strategia λ</em></h2>
+
+    <p>Dove Hylo diventa interessante davvero è quando lo combini con Loopscale. Loopscale supporta hyloSOL e hyUSD come collaterale in loop. Risultato: tre layer di yield sullo stesso capitale.</p>
+
+    <div class="mechanism">
+      <div class="mechanism-title">→ Stack potenziale (esempio)</div>
+      <div class="flow">
+        <div class="flow-box">
+          <div class="name">SOL</div>
+          <div class="desc">deposit iniziale</div>
+        </div>
+        <div class="arrow">→</div>
+        <div class="flow-box">
+          <div class="name">hyloSOL+</div>
+          <div class="desc">staking yield<br>+ XP boost</div>
+        </div>
+        <div class="arrow">→</div>
+        <div class="flow-box">
+          <div class="name">Loop</div>
+          <div class="desc">leverage su<br>Loopscale</div>
+        </div>
+      </div>
+      <p style="font-size: 14px; color: var(--ink-dim); max-width: none; margin: 0;">Yield base LST (~7%) + XP Hylo (per potenziale airdrop) + punti Loopscale + amplificazione del loop = potenzialmente 20-30%+ APY effettivi. Tutto su sottostante "stable-ish".</p>
+    </div>
+
+    <p>Stessa logica del setup ONyc-Loopscale, ma con sottostante diverso (LST staking yield invece di reinsurance premium). <strong>Diversificazione del rischio sottostante</strong>, non duplicazione.</p>
+
+    <p>Se ONyc è il tuo bet su <em class="highlight">reinsurance reale</em>, Hylo è il tuo bet su <em class="highlight">staking economics di Solana</em>. Due fonti di yield non correlate.</p>
+  </section>
+
+  <div class="verdict">
+    <div class="verdict-label">→ Verdetto λ Forensics</div>
+    <h3>Hylo è uno dei pochi <em>nuovi primitive</em> DeFi 2026 che merita attenzione vera.</h3>
+    <p>Architettura elegante, audit serio, $100M TVL guadagnati senza incentive token, stress test Q1 2026 superato. Il claim "liquidation-free" non è marketing — è una conseguenza matematica del design (no debito = no liquidazione).</p>
+    <p style="margin-top: 16px;">Resta un protocollo giovane su un asset volatile. Ma se vuoi esposizione amplificata a SOL senza l'ansia da margin call, o yield reale su uno stablecoin più decentralizzato, Hylo è la cosa più interessante che è uscita su Solana negli ultimi 12 mesi insieme a OnRe.</p>
+    <p style="margin-top: 16px; color: var(--amber); font-style: italic;">Tradurre: ci si può stare. Con dimensioning sensato e Sentinel attivo sul CR.</p>
+  </div>
+
+  <footer>
+    <div>λ FORENSICS · DEEP DIVE 008 · MAY 2026</div>
+    <div>SOURCES: HYLO DOCS · OTTERSEC AUDIT · PINE ANALYTICS · IQ.WIKI</div>
+  </footer>
+</div>
+
+<!-- ========== ENGLISH ========== -->
+<div id="lang-en" class="lang-section">
+
+  <header class="header">
+    <div class="header-meta">
+      <span>λ Forensics</span>
+      <span class="dot"></span>
+      <span>Deep Dive · 008</span>
+      <span class="dot"></span>
+      <span>Solana DeFi</span>
+    </div>
+    <div class="header-tag">CR / 182% / OPERATIONAL</div>
+    <h1>Hylo:<br>is <em>liquidation-free</em><br>leverage actually real?</h1>
+    <p class="subtitle">A Solana protocol promising 2–4x SOL exposure with no margin calls, no funding rates, no oracles. Let's see if the numbers hold up — or if it's just another Crypto Twitter slide deck.</p>
+  </header>
+
+  <div class="tldr">
+    <div class="tldr-label">→ TL;DR</div>
+    <p>Hylo is a dual-token system on Solana: <strong>hyUSD</strong> (stablecoin) and <strong>xSOL</strong> (leverage) share the same LST collateral pool.</p>
+    <p>When SOL moves, xSOL absorbs the volatility. hyUSD stays stable. No liquidations because <em class="highlight">there's no debt</em> — it's an internal value redistribution.</p>
+    <p>$100M TVL in 4 months from launch. OtterSec audit. Real stress test in Q1 2026: passed. <strong>It works.</strong> But it has its risks, and I'm not hiding any of them.</p>
+  </div>
+
+  <section>
+    <div class="section-num">01 — The numbers</div>
+    <h2>What the data says, before the narrative</h2>
+
+    <div class="stats">
+      <div class="stat">
+        <div class="stat-label">Peak TVL</div>
+        <div class="stat-value amber">~$100M</div>
+        <div class="stat-sub">4 months from launch</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">sHYUSD APY</div>
+        <div class="stat-value green">15–22%</div>
+        <div class="stat-sub">2025-26 operational range</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Q1 2026 Peak APY</div>
+        <div class="stat-value green">52.4%</div>
+        <div class="stat-sub">quarterly stress test</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Collateral Ratio</div>
+        <div class="stat-value">182%</div>
+        <div class="stat-sub">min target: 150%</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">xSOL Leverage</div>
+        <div class="stat-value amber">2–3.2x</div>
+        <div class="stat-sub">variable, never above 4x</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Annualized Fees</div>
+        <div class="stat-value">$6M+</div>
+        <div class="stat-sub">protocol revenue</div>
+      </div>
+    </div>
+
+    <p>TVL went from zero to $100M in 4 months. Annualized fee revenue over $6M. These are real product-market fit numbers, not emission farm numbers.</p>
+  </section>
+
+  <section>
+    <div class="section-num">02 — Architecture</div>
+    <h2>The trick: <em>nobody lends to anyone</em></h2>
+
+    <p class="lead">This is where it diverges from Drift, MarginFi, Kamino. In normal perps you borrow from a pool, and if price drops below threshold, you get liquidated to repay the debt. On Hylo there's no borrowing. There's a closed two-token system that auto-balances.</p>
+
+    <div class="mechanism">
+      <div class="mechanism-title">→ Value flow</div>
+      <div class="flow">
+        <div class="flow-box">
+          <div class="name">LST</div>
+          <div class="desc">jitoSOL, mSOL,<br>bSOL, JupSOL</div>
+        </div>
+        <div class="arrow">→</div>
+        <div class="flow-box">
+          <div class="name">Pool</div>
+          <div class="desc">shared<br>collateral</div>
+        </div>
+        <div class="arrow">→</div>
+        <div class="flow-box">
+          <div class="name">hyUSD + xSOL</div>
+          <div class="desc">stable +<br>leverage</div>
+        </div>
+      </div>
+      <p style="font-size: 14px; color: var(--ink-dim); max-width: none; margin: 0;">The LST pool must always equal the sum of hyUSD + xSOL minted. When SOL goes up, the excess value flows to xSOL. When SOL drops, xSOL loses value but hyUSD stays pegged at $1.</p>
+    </div>
+
+    <div class="tokens">
+      <div class="token-card">
+        <div class="symbol">hyUSD</div>
+        <div class="role">Stablecoin</div>
+        <p>Pegged 1:1 to USD, backed by LSTs in over-collateralized fashion. No external oracles. Guaranteed liquidity via mint/redeem.</p>
+        <div class="apy">→ Base yield from LST staking</div>
+      </div>
+      <div class="token-card">
+        <div class="symbol">sHYUSD</div>
+        <div class="role">Yield + Stability Pool</div>
+        <p>Staked hyUSD. Captures all the staking yield from the pool. Acts as the system's last backstop in case of a crash.</p>
+        <div class="apy">→ 15–22% APY (52.4% in Q1 2026)</div>
+      </div>
+      <div class="token-card">
+        <div class="symbol">xSOL</div>
+        <div class="role">Liquidation-free leverage</div>
+        <p>Amplified 2–3.2x exposure to SOL price. No margin calls. No funding rates. No volatility decay.</p>
+        <div class="apy">→ Goes up more when SOL goes up</div>
+      </div>
+    </div>
+
+    <div class="pull-quote">
+      <p>"xSOL isn't debt-based leverage. It's balance-sheet leverage. That's why you can't be liquidated — there's nobody you owe money to."</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-num">03 — Stability mechanism</div>
+    <h2>What happens <em>when things go wrong</em></h2>
+
+    <p>The obvious question: what if SOL crashes 50% in three days? Hylo has three automatic thresholds based on Collateral Ratio (CR), the ratio of total collateral value to hyUSD outstanding.</p>
+
+    <div class="compare">
+      <table>
+        <thead>
+          <tr>
+            <th>CR</th>
+            <th>State</th>
+            <th>Protocol action</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>&gt; 150%</td>
+            <td>Healthy</td>
+            <td>Normal operation, minimal fees</td>
+          </tr>
+          <tr>
+            <td>130–150%</td>
+            <td>Stability Mode 1</td>
+            <td>Dynamic fees discourage actions that worsen CR</td>
+          </tr>
+          <tr>
+            <td>&lt; 130%</td>
+            <td>Stability Mode 2</td>
+            <td>Stability pool activated: sHYUSD converts to xSOL</td>
+          </tr>
+          <tr>
+            <td>&lt; 100%</td>
+            <td>Critical</td>
+            <td>xSOL → 0, hyUSD loses SOL volatility hedge</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>Key point: before the system collapses, there's an entire sHYUSD reserve acting as backstop. If SOL crashes hard, sHYUSD holders get part of their deposit converted to xSOL — accepting the risk in exchange for the amplified yield they've been earning.</p>
+
+    <div class="stress-test">
+      <div class="label">⚠ Q1 2026 stress test — passed, but not free</div>
+      <h4>What actually happened</h4>
+      <p>Q1 2026, SOL trending down. Hylo TVL dropped <strong>58%</strong>: 33% from collateral price decline, 25% ($13M) from net withdrawals.</p>
+      <p>The stability pool was <strong>activated</strong> for the first time in production. sHYUSD temporarily lost stable pegging (it became exposed to xSOL). End result: <strong>52.4% APY</strong> for the quarter, because xSOL bounced back.</p>
+      <p>The mechanism worked. But anyone who held sHYUSD for "stable" yield found themselves in a hybrid position for a few weeks. <em class="highlight">Takeaway: sHYUSD is not a traditional stablecoin. It's yield + insurance.</em></p>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-num">04 — What sets it apart</div>
+    <h2>Why this isn't another Terra/Luna</h2>
+
+    <p>I know what you're thinking. Algorithmic stablecoin, dual-token, "magic". You've seen this movie. But Hylo has three architectural choices that cleanly separate it from that disaster:</p>
+
+    <div class="risks" style="border-color: var(--line-strong);">
+      <div class="risk">
+        <div class="risk-num" style="color: var(--green);">+ 01</div>
+        <h4>Backed by real on-chain assets</h4>
+        <p>UST/Luna was backed by Luna itself (reflexive). Hylo is backed by LSTs which are backed by staked SOL. On-chain auditable in real time.</p>
+      </div>
+      <div class="risk">
+        <div class="risk-num" style="color: var(--green);">+ 02</div>
+        <h4>No external oracles</h4>
+        <p>xSOL value is computed from on-chain protocol collateral, not from a manipulable external price feed. <span class="metric-inline">reduced attack surface</span></p>
+      </div>
+      <div class="risk">
+        <div class="risk-num" style="color: var(--green);">+ 03</div>
+        <h4>Over-collateralized</h4>
+        <p>Target CR 150%, current ~182%. UST's effective CR was way lower. Here there's a real buffer before the system enters stress.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-num">05 — The risks (the real ones)</div>
+    <h2>Nothing is free, especially in DeFi</h2>
+
+    <p>I'm not here to sell you the protocol. These are concrete risks, in order of severity:</p>
+
+    <div class="risks">
+      <div class="risk">
+        <div class="risk-num">RISK 01</div>
+        <h4>LST depeg risk</h4>
+        <p>Hylo depends entirely on jitoSOL, mSOL, bSOL. If one of these collapses, Hylo's collateral collapses. LST diversification helps but doesn't eliminate systemic risk.</p>
+      </div>
+      <div class="risk">
+        <div class="risk-num">RISK 02</div>
+        <h4>Black swan untested</h4>
+        <p>Q1 2026 was a moderate stress test. A 70% SOL crash in 24h hasn't been tested yet. The system should hold mathematically, but "should" is the problem.</p>
+      </div>
+      <div class="risk">
+        <div class="risk-num">RISK 03</div>
+        <h4>Smart contract risk</h4>
+        <p>OtterSec audit May 2025: 7 findings, all resolved (commits verified). But complex code = unknown bugs possible. No code is bulletproof.</p>
+      </div>
+      <div class="risk">
+        <div class="risk-num">RISK 04</div>
+        <h4>sHYUSD isn't actually "stable"</h4>
+        <p>During stress, sHYUSD partially converts to xSOL. Q1 2026 showed this in production. If you want a stable parking spot, USDC is better. sHYUSD is yield + insurance.</p>
+      </div>
+      <div class="risk">
+        <div class="risk-num">RISK 05</div>
+        <h4>Implicit leverage decay</h4>
+        <p>xSOL leverage is <em>variable</em>, not fixed. If many people mint hyUSD, xSOL leverage rises. If they burn hyUSD, it drops. Hard to predict without watching CR.</p>
+      </div>
+      <div class="risk">
+        <div class="risk-num">RISK 06</div>
+        <h4>SOL concentration</h4>
+        <p>The whole system depends on SOL price. xBTC is coming in Q2 2026 for diversification, but for now if Solana has problems, Hylo has problems.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-num">06 — The full play</div>
+    <h2>How to integrate Hylo into <em>a λ strategy</em></h2>
+
+    <p>Where Hylo gets really interesting is when you combine it with Loopscale. Loopscale supports hyloSOL and hyUSD as loop collateral. Result: three yield layers on the same capital.</p>
+
+    <div class="mechanism">
+      <div class="mechanism-title">→ Potential stack (example)</div>
+      <div class="flow">
+        <div class="flow-box">
+          <div class="name">SOL</div>
+          <div class="desc">initial deposit</div>
+        </div>
+        <div class="arrow">→</div>
+        <div class="flow-box">
+          <div class="name">hyloSOL+</div>
+          <div class="desc">staking yield<br>+ XP boost</div>
+        </div>
+        <div class="arrow">→</div>
+        <div class="flow-box">
+          <div class="name">Loop</div>
+          <div class="desc">leverage on<br>Loopscale</div>
+        </div>
+      </div>
+      <p style="font-size: 14px; color: var(--ink-dim); max-width: none; margin: 0;">Base LST yield (~7%) + Hylo XP (potential airdrop) + Loopscale points + loop amplification = potentially 20-30%+ effective APY. All on a "stable-ish" underlying.</p>
+    </div>
+
+    <p>Same logic as the ONyc-Loopscale setup, but with a different underlying (LST staking yield instead of reinsurance premiums). <strong>Diversification of underlying risk</strong>, not duplication.</p>
+
+    <p>If ONyc is your bet on <em class="highlight">real reinsurance</em>, Hylo is your bet on <em class="highlight">Solana staking economics</em>. Two uncorrelated yield sources.</p>
+  </section>
+
+  <div class="verdict">
+    <div class="verdict-label">→ λ Forensics verdict</div>
+    <h3>Hylo is one of the few <em>new DeFi primitives</em> in 2026 that deserves real attention.</h3>
+    <p>Elegant architecture, serious audit, $100M TVL earned without an incentive token, Q1 2026 stress test passed. The "liquidation-free" claim isn't marketing — it's a mathematical consequence of the design (no debt = no liquidation).</p>
+    <p style="margin-top: 16px;">It remains a young protocol on a volatile asset. But if you want amplified SOL exposure without margin call anxiety, or real yield on a more decentralized stablecoin, Hylo is the most interesting thing that's launched on Solana in the last 12 months alongside OnRe.</p>
+    <p style="margin-top: 16px; color: var(--amber); font-style: italic;">Translation: it's a fit. With sensible position sizing and Sentinel watching the CR.</p>
+  </div>
+
+  <footer>
+    <div>λ FORENSICS · DEEP DIVE 008 · MAY 2026</div>
+    <div>SOURCES: HYLO DOCS · OTTERSEC AUDIT · PINE ANALYTICS · IQ.WIKI</div>
+  </footer>
+</div>
+
+</div>
+
+<script>
+  function setLang(lang) {
+    document.querySelectorAll('.lang-section').forEach(s => s.classList.remove('active'));
+    document.getElementById('lang-' + lang).classList.add('active');
+    document.querySelectorAll('.lang-toggle button').forEach(b => b.classList.remove('active'));
+    document.getElementById('btn-' + lang).classList.add('active');
+    document.documentElement.lang = lang;
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  }
+</script>
+
+</body>
+</html>
